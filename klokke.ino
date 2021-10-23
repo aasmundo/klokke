@@ -1,20 +1,31 @@
-#include <WSWire.h>
-#include <RTClib.h>
+#include <Wire.h>
+#include <DS3231.h>
+
 #include "klokke.h"
 #include <EEPROM.h>
 #include <LowPower.h>
-RTC_DS1307 RTC;
+
+#define STATUS_PIN 2
+#define LBATT_PIN 3
+
+RTClib RTC;
 
 
-uint8_t rtc_power_pin = 9;
 
-void turn_on_RTC() {
-  digitalWrite(rtc_power_pin, HIGH);
+
+long readVcc() {
+  long result;
+  // Read 1.1V reference against AVcc
+  ADMUX = _BV(REFS0) | _BV(MUX3) | _BV(MUX2) | _BV(MUX1);
+  delay(2); // Wait for Vref to settle
+  ADCSRA |= _BV(ADSC); // Convert
+  while (bit_is_set(ADCSRA,ADSC));
+  result = ADCL;
+  result |= ADCH<<8;
+  result = 1126400L / result; // Back-calculate AVcc in mV
+  return result;
 }
 
-void turn_off_RTC() {
-  digitalWrite(rtc_power_pin, LOW);
-}
 
 void shiftOut(byte myDataOut) {
   //Pin connected to ST_CP of 74HC595
@@ -47,10 +58,8 @@ void sleep(uint16_t duration) {
   if (duration == 0) {
     return;
   }
-  turn_off_RTC();
   Serial.end();
   delay(10);
-  float duration_f = ((float) duration) - 1.0;
   while(duration > 5) {
     LowPower.powerDown(SLEEP_4S, ADC_OFF, BOD_OFF);
     duration = duration - 4.05;
@@ -58,7 +67,6 @@ void sleep(uint16_t duration) {
   LowPower.powerDown(SLEEP_250MS, ADC_OFF, BOD_OFF);
   delay(20);
   Serial.begin(115200);
-  turn_on_RTC();
   delay(100);
 }
 
@@ -77,16 +85,15 @@ int32_t get_now() {
   DateTime now = RTC.now();
   if((millis() - tid) > 500) { // RTC most likely did not respond
     if(debug==1) {
-      Serial.print(F("RTC timout, starter RTC om igjen."));
+      Serial.print(F("RTC timout."));
     }
-    turn_on_RTC();
     delay(100);
     return -1;
   } else {
     if(fast==1) {
       return (int32_t) (millis() / 100); 
     }else{
-      return (int32_t) (now.unixtime() / 60);      
+      return (int32_t) (now.secondstime() / 60);      
     }
   }
 }
@@ -105,7 +112,7 @@ int32_t wait_new_minute() {
 
 int32_t get_day() {
   DateTime now = RTC.now();
-  if(now.day() < 0 || now.day() >31) {
+  if(now.day() >31) {
     return 99;
   }else {
     if(fast==1) {
@@ -135,13 +142,17 @@ void setup() {
   pinMode(11, OUTPUT);
   pinMode(2, INPUT_PULLUP);
 
-  pinMode(rtc_power_pin, OUTPUT);
+  pinMode(STATUS_PIN, OUTPUT);
+  pinMode(LBATT_PIN, OUTPUT);
+  digitalWrite(STATUS_PIN, HIGH);
+  digitalWrite(LBATT_PIN,HIGH);
+  delay(500);
+  digitalWrite(STATUS_PIN, LOW);
+  digitalWrite(LBATT_PIN, LOW);
 
-  turn_on_RTC();
 
   Wire.begin();
-  RTC.begin();
-  RTC.adjust(DateTime(18,8,5,23,59,56));
+
   int16_t temp_a;
   int16_t temp_b;
   int16_t clock_states_temp;
@@ -190,7 +201,7 @@ int16_t calc_start_time(int16_t runtime) {
   return 720 - runtime;
 }
 
-void update_states(uint8_t low_batt) {
+void update_states() {
   int8_t k;
   int32_t dom = get_day();
   int16_t goal_state;
@@ -202,7 +213,7 @@ void update_states(uint8_t low_batt) {
     Serial.print(((uint32_t) (unixtime_min%1440))*6);
     Serial.print("0000,");
   }
-  byte shift_byte;
+  byte shift_byte = 0;
   for(int8_t i=0;i<6;i++) {
     for(int8_t j=0;j<8;j++) {
       k = i*8 + j;
@@ -243,14 +254,23 @@ uint8_t low_battery() {
 
 void loop() {
   unixtime_min = wait_new_minute();
-  update_states(0);
+  update_states();
   if(fast==0){
     if((unixtime_min % 1440) == 720) {
       write_clock_states();
       sleep(40000);
     }
-  
-      sleep(57);
+      long mv_batt = readVcc();
+      if(mv_batt < 3300) {
+        digitalWrite(STATUS_PIN, HIGH);
+      } else if (mv_batt < 3200) {
+        digitalWrite(STATUS_PIN, HIGH);
+        digitalWrite(LBATT_PIN, HIGH);
+      } else {
+        digitalWrite(STATUS_PIN, LOW);
+        digitalWrite(LBATT_PIN, LOW);
+      }
+      sleep(54);
   }
 
 
