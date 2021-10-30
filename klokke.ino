@@ -8,6 +8,7 @@
 
 
 #define MIN_IN_DAY 1440
+#define ENDTIME 420
 #define STATUS_PIN 2
 #define LBATT_PIN 3
 
@@ -140,7 +141,6 @@ void write_clock_states() {
 }
 
 void setup() {
-  clock_prescale_set(clock_div_2);
   pinMode(8, OUTPUT);
   pinMode(12, OUTPUT);
   pinMode(11, OUTPUT);
@@ -206,12 +206,14 @@ int16_t calc_runtime(int16_t state_now, int16_t goal_state) {
   } else if(state_now < goal_state) {
     return goal_state - state_now;
   } else {
-    return goal_state + (720-state_now);
+    return goal_state + (720-state_now); // 720 I how many minutes before clock wraps
   }
 }
 
 int16_t calc_start_time(int16_t runtime) {
-  return 720 - runtime;
+  int16_t start_time = ENDTIME - runtime;
+  start_time = start_time < 0 ? start_time + 720 : start_time;
+  return start_time;
 }
 
 void update_states() {
@@ -247,11 +249,11 @@ void update_states() {
         Serial.print(", ");
         Serial.println(unixtime_min % MIN_IN_DAY);
       }
-      if ((unixtime_min % MIN_IN_DAY) == starttime && ((unixtime_min % MIN_IN_DAY) < 720)) {
+
+      shift_byte = clocks_last_state[i];
+      if ((unixtime_min % MIN_IN_DAY) == starttime) { // Start the clock if time is "starttime"
         bitSet(shift_byte,l);
-      } else if(((unixtime_min % MIN_IN_DAY) > starttime) && ((unixtime_min % MIN_IN_DAY) < 720)) {
-        bitSet(shift_byte,l);
-      } else{
+      } else if((unixtime_min % MIN_IN_DAY) == ENDTIME) { 
         bitClear(shift_byte,l);
       }
     }
@@ -296,7 +298,7 @@ void loop() {
   Serial.println(unixtime_min);
   update_states();
   if(fast==0){
-    if((unixtime_min % MIN_IN_DAY) == 720) {
+    if((unixtime_min % MIN_IN_DAY) == ENDTIME) {
       write_clock_states();
       sleep(40000);
     }
