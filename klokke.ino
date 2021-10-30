@@ -1,10 +1,13 @@
 #include <Wire.h>
 #include <DS3231.h>
+#include <avr/power.h>
 
 #include "klokke.h"
 #include <EEPROM.h>
 #include <LowPower.h>
 
+
+#define MIN_IN_DAY 1440
 #define STATUS_PIN 2
 #define LBATT_PIN 3
 
@@ -70,14 +73,14 @@ void sleep(uint16_t duration) {
   delay(100);
 }
 
+
 int32_t unixtime_min = 0;
 
 int16_t clocks_time[48] = {0};
-int16_t clocks_runtime[48] = {0};
 byte clocks_last_state[6] = {0};
 uint8_t debug = 1;
-uint8_t fast = 1;
-uint8_t day = 0;
+uint8_t reset_eeprom = 1;
+uint8_t fast = 0;
 
 
 int32_t get_now() {
@@ -85,15 +88,15 @@ int32_t get_now() {
   DateTime now = RTC.now();
   if((millis() - tid) > 500) { // RTC most likely did not respond
     if(debug==1) {
-      Serial.print(F("RTC timout."));
+      Serial.print(F("RTC timeout."));
     }
     delay(100);
     return -1;
   } else {
     if(fast==1) {
-      return (int32_t) (millis() / 100); 
+      return (int32_t) (unixtime_min + random(0,2)); 
     }else{
-      return (int32_t) (now.secondstime() / 60);      
+      return (int32_t) (now.unixtime() / 60);      
     }
   }
 }
@@ -116,7 +119,7 @@ int32_t get_day() {
     return 99;
   }else {
     if(fast==1) {
-      return (int32_t) ((unixtime_min/1440)%32);
+      return (int32_t) ((unixtime_min/MIN_IN_DAY)%32);
     } else {
       return (int32_t) now.day();
     }
@@ -128,7 +131,7 @@ void write_clock_states() {
   uint16_t temp16;
   byte tempbyte;
   for(uint8_t i=0;i<48;i++) {
-    temp16 = (uint16_t) clocks_runtime[i];
+    temp16 = (uint16_t) clocks_time[i];
     tempbyte = temp16 / 256;
     EEPROM.write((i*2),tempbyte);
     tempbyte = temp16;
@@ -137,11 +140,14 @@ void write_clock_states() {
 }
 
 void setup() {
+  clock_prescale_set(clock_div_2);
   pinMode(8, OUTPUT);
   pinMode(12, OUTPUT);
   pinMode(11, OUTPUT);
   pinMode(2, INPUT_PULLUP);
-
+  for(uint8_t i=0;i<6;i++) {
+    shiftOut(0x00);
+  }
   pinMode(STATUS_PIN, OUTPUT);
   pinMode(LBATT_PIN, OUTPUT);
   digitalWrite(STATUS_PIN, HIGH);
@@ -172,7 +178,13 @@ void setup() {
     Serial.print(now.minute());
     Serial.print(":");
     Serial.println(now.second());
-  } 
+  }
+
+  if (reset_eeprom == 1) {
+    write_clock_states();
+  }
+
+  
   for(uint8_t i=0;i<48;i++) {
     temp_a = (int16_t) EEPROM.read(i*2);
     temp_b = (int16_t) EEPROM.read((i*2)+1);
@@ -182,9 +194,10 @@ void setup() {
       EEPROM.write(i*2,i);
       EEPROM.write((i*2)+1,i);
     } else {
-      clocks_runtime[i] = clock_states_temp;
+    clocks_time[i] = clock_states_temp;
     }
   }
+  low_battery();
 }
 
 int16_t calc_runtime(int16_t state_now, int16_t goal_state) {
@@ -207,14 +220,16 @@ void update_states() {
   int16_t goal_state;
   int16_t starttime;
   uint8_t day[2];
+  uint8_t diff = 0;
   day[0] = dom / 10;
   day[1] = dom % 10;
   if(debug==1) {
-    Serial.print(((uint32_t) (unixtime_min%1440))*6);
+    Serial.print(((uint32_t) (unixtime_min%MIN_IN_DAY))*6);
     Serial.print("0000,");
   }
-  byte shift_byte = 0;
+  
   for(int8_t i=0;i<6;i++) {
+    byte shift_byte = 0;
     for(int8_t j=0;j<8;j++) {
       k = i*8 + j;
       uint8_t l = 7-j;
@@ -224,52 +239,68 @@ void update_states() {
       
       goal_state = getDest((24*day[k/24])+(k%24));
       starttime = calc_start_time(calc_runtime(clocks_time[k],goal_state));
-      if ((unixtime_min % 1440) == starttime && ((unixtime_min % 1440) < 720)) {
+      if (debug == 1) {
+        Serial.print("goal_state, startime, unixtime%1440: ");
+        Serial.print(goal_state);
+        Serial.print(", ");
+        Serial.print(starttime);
+        Serial.print(", ");
+        Serial.println(unixtime_min % MIN_IN_DAY);
+      }
+      if ((unixtime_min % MIN_IN_DAY) == starttime && ((unixtime_min % MIN_IN_DAY) < 720)) {
         bitSet(shift_byte,l);
-      } else if(((unixtime_min % 1440) > starttime) && ((unixtime_min % 1440) < 720)) {
+      } else if(((unixtime_min % MIN_IN_DAY) > starttime) && ((unixtime_min % MIN_IN_DAY) < 720)) {
         bitSet(shift_byte,l);
       } else{
         bitClear(shift_byte,l);
       }
     }
+    diff += (clocks_last_state[i] != shift_byte) ? 1 : 0;
     clocks_last_state[i] = shift_byte;
-    if(debug==1) {
+
+  }
+  if(diff != 0) {
+    for(uint8_t i=0;i<6;i++) {
+      if(debug==1) {
         for(int8_t j=7;j>=0;j--) {
-          Serial.print(bitRead(shift_byte,j));
+          Serial.print(bitRead(clocks_last_state[i],j));
           Serial.print(",");
         }
-      } else {
-        shiftOut(shift_byte);
       }
+      shiftOut(clocks_last_state[i]);
+    }
   }
   if(debug==1) {
     Serial.println(F("NEXT"));
   }
 }
 
-uint8_t low_battery() {
-  // TODO
-  return 0;
+void low_battery() {
+  long mv_batt = readVcc();
+  if(mv_batt < 3275 && mv_batt >3200) {
+    digitalWrite(STATUS_PIN, HIGH);
+  } else if (mv_batt <= 3200) {
+    digitalWrite(STATUS_PIN, HIGH);
+    digitalWrite(LBATT_PIN, HIGH);
+  } else {
+    digitalWrite(STATUS_PIN, LOW);
+    digitalWrite(LBATT_PIN, LOW);
+  }
+  Serial.print("Batt: ");
+  Serial.println((uint32_t) mv_batt);
 }
 
 void loop() {
   unixtime_min = wait_new_minute();
+  Serial.print("unixtime_min: ");
+  Serial.println(unixtime_min);
   update_states();
   if(fast==0){
-    if((unixtime_min % 1440) == 720) {
+    if((unixtime_min % MIN_IN_DAY) == 720) {
       write_clock_states();
       sleep(40000);
     }
-      long mv_batt = readVcc();
-      if(mv_batt < 3300) {
-        digitalWrite(STATUS_PIN, HIGH);
-      } else if (mv_batt < 3200) {
-        digitalWrite(STATUS_PIN, HIGH);
-        digitalWrite(LBATT_PIN, HIGH);
-      } else {
-        digitalWrite(STATUS_PIN, LOW);
-        digitalWrite(LBATT_PIN, LOW);
-      }
+      low_battery();
       sleep(54);
   }
 
