@@ -7,7 +7,7 @@
 #include <LowPower.h>
 
 #define MIN_IN_DAY 1440// Minutes in a day
-#define ENDTIME 420    // Time the watches must be finished
+#define ENDTIME 540    // Time the watches must be finished
 #define STATUS_PIN 2
 #define LBATT_PIN 3
 #define LATCH_PIN 8    //Pin connected to ST_CP of 74HC595
@@ -72,7 +72,8 @@ byte clocks_last_state[6] = {0};
 
 // Settings
 uint8_t debug = 1;        // Write more stuff to the serial port
-uint8_t reset_eeprom = 1; // Reset the clock states stored in EEPROM to 0 (12:00)
+uint8_t reset_eeprom = 3; // Reset the clock states if first boot after programming
+uint8_t startDay = 31;    // The number that the thing shows now
 uint8_t fast = 0;         // Don't use RTC, but instead progress as fast as possible. For debug.
 
 
@@ -125,8 +126,8 @@ int32_t getTomorrow(uint8_t day, uint8_t month, int32_t year) {
   monthLength[10] = 30;
   monthLength[11] = 31;
   day += 1;
-  if(day > monthLength[month]) {
-    day = 0;
+  if(day > monthLength[month-1]) {
+    day = 1;
   }
   return (int32_t) day;
 }
@@ -146,16 +147,9 @@ int32_t get_day() { // Get day of the month
 }
 
 
-void write_clock_states() { // Shift out on/off to all the clocks
-  uint16_t temp16;
-  byte tempbyte;
-  for(uint8_t i=0;i<48;i++) {
-    temp16 = (uint16_t) clocks_time[i];
-    tempbyte = temp16 / 256;
-    EEPROM.write((i*2),tempbyte);
-    tempbyte = temp16;
-    EEPROM.write((i*2)+1,tempbyte);
-  }
+void write_clock_states(uint8_t day) { // Shift out on/off to all the clocks
+    EEPROM.write(0,day);
+    EEPROM.write(10,reset_eeprom);
 }
 
 void setup() {
@@ -196,24 +190,22 @@ void setup() {
   }
 
   // Reset the EEPROM
-  if (reset_eeprom == 1) {
-    write_clock_states();
+  if (reset_eeprom != EEPROM.read(10)) {
+    write_clock_states(startDay);
+    Serial.println(F("Loaded new day in to EEPROM"));
   }
 
   // Read the clock states stored in EEPROM
-  int16_t temp_a;
-  int16_t temp_b;
-  int16_t clock_states_temp;
-  for(uint8_t i=0;i<48;i++) {
-    temp_a = (int16_t) EEPROM.read(i*2);
-    temp_b = (int16_t) EEPROM.read((i*2)+1);
-    clock_states_temp = (temp_a*256) + temp_b;
-    if(debug == 1) {
-      Serial.println(clock_states_temp);
-      EEPROM.write(i*2,i);
-      EEPROM.write((i*2)+1,i);
+  startDay = EEPROM.read(0);
+  uint8_t day[2];
+  int8_t k;
+  day[0] = startDay / 10;
+  day[1] = startDay % 10;
+  for(int8_t i=0;i<6;i++) {
+    for(int8_t j=0;j<8;j++) {
+      k = i*8 + j;
+      clocks_time[k] = getDest((24*day[j/4]+((4*(5-i))+(j%4))));
     }
-    clocks_time[i] = clock_states_temp;
   }
 }
 
@@ -344,8 +336,7 @@ void loop() {
   if(fast==0){ // Skip sleep and EEPROM write if in fast mode
     low_battery(); // Check battery level
     if((unixtime_min % MIN_IN_DAY) == ENDTIME) {
-      write_clock_states(); // Write clock states to EEPROM so power can be removed
-      //sleep(40000);         // Sleep for a long time (11+ hours) 
+      write_clock_states(((uint8_t) get_day())); // Write clock states to EEPROM so power can be removed
     }
       sleep(58);            // Sleep almost a minute
   }
