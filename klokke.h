@@ -16,6 +16,7 @@ const uint32_t EOD = 86400;
 
 const uint8_t daysInMonth [] PROGMEM = { 31,28,31,30,31,30,31,31,30,31,30,31 };
 
+
 const uint8_t klokkeslett[FLASH_ARRAY_SIZE] PROGMEM = {
 // 0
 6,15,  2,45,  2,45,  5,45,
@@ -99,5 +100,3 @@ int16_t getDest(uint8_t watch) {
   int16_t dest_min = 60*((int16_t) hour) + ((int16_t) minute);
   return dest_min;
   };
-
-

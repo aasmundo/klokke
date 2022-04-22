@@ -7,7 +7,7 @@
 #include <LowPower.h>
 
 #define MIN_IN_DAY 1440// Minutes in a day
-#define ENDTIME 540    // Time the watches must be finished
+#define ENDTIME 420    // Time the watches must be finished
 #define STATUS_PIN 2
 #define LBATT_PIN 3
 #define LATCH_PIN 8    //Pin connected to ST_CP of 74HC595
@@ -33,7 +33,7 @@ long readVcc() {
 }
 
 
-void shiftOut(byte myDataOut) {
+void shiftOut(byte myDataOut, uint8_t latchon) {
   digitalWrite(LATCH_PIN, 0);
   // This shifts 8 bits out MSB first
   uint8_t pinState;
@@ -44,7 +44,9 @@ void shiftOut(byte myDataOut) {
     digitalWrite(CLOCK_PIN, 1);
   }
   digitalWrite(CLOCK_PIN, 0);
-  digitalWrite(LATCH_PIN, 1);
+  if(latchon != 0) {
+    digitalWrite(LATCH_PIN, 1);
+  }
 }
 
 // Sleep for duration in seconds
@@ -58,7 +60,7 @@ void sleep(uint16_t duration) {
     LowPower.powerDown(SLEEP_4S, ADC_OFF, BOD_OFF);
     duration = duration - 4.05;
   }
-  LowPower.powerDown(SLEEP_250MS, ADC_OFF, BOD_OFF);
+  LowPower.powerDown(SLEEP_500MS, ADC_OFF, BOD_OFF);
   delay(20);
   Serial.begin(115200);
   delay(100);
@@ -72,8 +74,8 @@ byte clocks_last_state[6] = {0};
 
 // Settings
 uint8_t debug = 1;        // Write more stuff to the serial port
-uint8_t reset_eeprom = 3; // Reset the clock states if first boot after programming
-uint8_t startDay = 31;    // The number that the thing shows now
+uint8_t reset_eeprom = 6; // Reset the clock states if first boot after programming
+uint8_t startDay = 19;    // The number that the thing shows now
 uint8_t fast = 0;         // Don't use RTC, but instead progress as fast as possible. For debug.
 
 
@@ -159,7 +161,7 @@ void setup() {
   pinMode(DATA_PIN, OUTPUT);
   pinMode(STATUS_PIN, OUTPUT);
   for(uint8_t i=0;i<6;i++) {
-    shiftOut(0x00);
+    shiftOut(0x00, i == 5 );
   }
   pinMode(STATUS_PIN, OUTPUT);
   pinMode(LBATT_PIN, OUTPUT);
@@ -301,7 +303,7 @@ void update_states() {
           Serial.print(",");
         }
       }
-      shiftOut(clocks_last_state[i]);
+      shiftOut(clocks_last_state[i], i == 5);
     }
   }
   if(debug==1) {
