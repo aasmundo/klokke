@@ -3,15 +3,18 @@
 #define FLASH_ARRAY_SIZE 10*24*2
 #define HS 60*60
 #define MS 60
+#define MIN_IN_DAY 1440// Minutes in a day
+#define ENDTIME 540    // Time the watches must be finished
 #define bitRead(value, bit) (((value) >> (bit)) & 0x01)
 #define bitSet(value, bit) ((value) |= (1ULL << (bit)))
 #define bitClear(value, bit) ((value) &= ~(1ULL << (bit)))
 #define bitSet64(value, bit) ((value) |= (1ULL << (bit)))
 #define bitClear64(value, bit) ((value) &= ~(1ULL << (bit)))
 //#define bitWrite64(value, bit, bitvalue) (bitvalue ? bitSet(value, bit) : bitClear(value, bit))
-const uint32_t EOW = 43200;
-const uint32_t DONETIME = 28800;
-const uint32_t EOD = 86400;
+// const uint32_t EOW = 43200;
+// const uint32_t DONETIME = 8*60*60;
+// const uint32_t EOD = 24*60*60;
+
 
 
 const uint8_t daysInMonth [] PROGMEM = { 31,28,31,30,31,30,31,31,30,31,30,31 };

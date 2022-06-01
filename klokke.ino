@@ -1,20 +1,26 @@
-#include <Wire.h>
-#include <DS3231.h>
-#include <avr/power.h>
+// #define PIN_OUTPUT
+// #define DS1307
 
+
+#include "RTClib.h"
+
+#include <avr/power.h>
 #include "klokke.h"
 #include <EEPROM.h>
 #include <LowPower.h>
 
-#define MIN_IN_DAY 1440// Minutes in a day
-#define ENDTIME 540    // Time the watches must be finished
-#define STATUS_PIN 2
-#define LBATT_PIN 3
-#define LATCH_PIN 8    //Pin connected to ST_CP of 74HC595
-#define CLOCK_PIN 12   //Pin connected to SH_CP of 74HC595
-#define DATA_PIN 11    //Pin connected to DS of 74HC595
 
-RTClib RTC;
+#ifdef PIN_OUTPUT
+#include "pin_output.h"
+#else
+#include "shift_output.h"
+#endif
+
+#ifdef DS1307
+RTC_DS1307 rtc;
+#else
+RTC_DS3231 rtc;
+#endif
 
 
 
@@ -33,19 +39,6 @@ long readVcc() {
 }
 
 
-void shiftOut(byte myDataOut) {
-  digitalWrite(LATCH_PIN, 0);
-  // This shifts 8 bits out MSB first
-  uint8_t pinState;
-  for (int8_t i=7; i>=0; i--)  {
-    digitalWrite(CLOCK_PIN, 0);
-    pinState = ( myDataOut & (1<<i) ) ? 1 : 0;
-    digitalWrite(DATA_PIN, pinState);
-    digitalWrite(CLOCK_PIN, 1);
-  }
-  digitalWrite(CLOCK_PIN, 0);
-  digitalWrite(LATCH_PIN, 1);
-}
 
 // Sleep for duration in seconds
 void sleep(uint16_t duration) {
@@ -79,7 +72,7 @@ uint8_t fast = 0;         // Don't use RTC, but instead progress as fast as poss
 
 int32_t get_now() {
   uint64_t tid = millis();
-  DateTime now = RTC.now();
+  DateTime now = rtc.now();
   if((millis() - tid) > 500) { // RTC most likely did not respond
     if(debug==1) {
       Serial.print(F("RTC timeout."));
@@ -105,6 +98,11 @@ int32_t wait_new_minute() { // Wait to next minute
 
   } while(new_minute == prev_minute || new_minute == -1);
   return new_minute;
+}
+
+uint8_t getTomorrow(DateTime now) {
+  DateTime tomorrow(now + TimeSpan(1,0,0,0));
+  return tomorrow.day();
 }
 
 int32_t getTomorrow(uint8_t day, uint8_t month, int32_t year) {
@@ -133,7 +131,7 @@ int32_t getTomorrow(uint8_t day, uint8_t month, int32_t year) {
 }
 
 int32_t get_day() { // Get day of the month
-  DateTime now = RTC.now();
+  DateTime now = rtc.now();
   if(now.day() >31) {
     return 99;
   }else {
@@ -153,29 +151,16 @@ void write_clock_states(uint8_t day) { // Shift out on/off to all the clocks
 }
 
 void setup() {
-  // Set up pin state
-  pinMode(LATCH_PIN, OUTPUT);
-  pinMode(CLOCK_PIN, OUTPUT);
-  pinMode(DATA_PIN, OUTPUT);
-  pinMode(STATUS_PIN, OUTPUT);
-  for(uint8_t i=0;i<6;i++) {
-    shiftOut(0x00);
-  }
-  pinMode(STATUS_PIN, OUTPUT);
-  pinMode(LBATT_PIN, OUTPUT);
-  digitalWrite(STATUS_PIN, HIGH);
-  digitalWrite(LBATT_PIN,HIGH);
-  delay(500);
-  digitalWrite(STATUS_PIN, LOW);
-  digitalWrite(LBATT_PIN, LOW);
+
+  setupOutput();
 
   // Start I2C for RTC
-  Wire.begin();
+  rtc.begin();
 
   if(debug==1) {
     Serial.begin(115200);
     Serial.println(F("Starting"));
-    DateTime now = RTC.now();
+    DateTime now = rtc.now();
     Serial.print(now.day());
     Serial.print("/");
     Serial.print(now.month());
