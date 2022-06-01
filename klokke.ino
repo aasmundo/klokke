@@ -7,16 +7,26 @@
 #include <LowPower.h>
 
 #define MIN_IN_DAY 1440// Minutes in a day
-#define ENDTIME 420    // Time the watches must be finished
+#define ENDTIME 360    // Time the watches must be finished
 #define STATUS_PIN 2
 #define LBATT_PIN 3
 #define LATCH_PIN 8    //Pin connected to ST_CP of 74HC595
 #define CLOCK_PIN 12   //Pin connected to SH_CP of 74HC595
 #define DATA_PIN 11    //Pin connected to DS of 74HC595
+#define SLEEPBUFFER 2  //Sleep margin
 
 RTClib RTC;
 
+int32_t unixtime_min = 0;
 
+int16_t clocks_time[48] = {0};
+byte clocks_last_state[6] = {0};
+
+// Settings
+uint8_t debug = 1;        // Write more stuff to the serial port
+uint8_t reset_eeprom = 2; // Reset the clock states if first boot after programming
+uint8_t startDay = 1;    // The number that the thing shows now
+uint8_t fast = 0;         // Don't use RTC, but instead progress as fast as possible. For debug.
 
 
 long readVcc() {
@@ -32,6 +42,23 @@ long readVcc() {
   return result;
 }
 
+uint8_t get_secs_to_new_minute() {
+  uint64_t tid = millis();
+  DateTime now = RTC.now();
+  if((millis() - tid) > 500) { // RTC most likely did not respond
+    if(debug==1) {
+      Serial.print(F("RTC timeout."));
+    }
+    delay(100);
+    return 0;
+  } else {
+    if(fast==1) {
+      return 0;
+    }else{
+      return (uint8_t) (60 - now.second());
+    }
+  }
+}
 
 void shiftOut(byte myDataOut, uint8_t latchon) {
   digitalWrite(LATCH_PIN, 0);
@@ -49,34 +76,26 @@ void shiftOut(byte myDataOut, uint8_t latchon) {
   }
 }
 
-// Sleep for duration in seconds
-void sleep(uint16_t duration) {
-  if (duration == 0) {
-    return;
-  }
+// Sleep for until its soon a new minute
+void sleep() {
+  uint8_t secs_left = get_secs_to_new_minute();
   Serial.end();
   delay(10);
-  while(duration > 5) {
-    LowPower.powerDown(SLEEP_4S, ADC_OFF, BOD_OFF);
-    duration = duration - 4.05;
+  while(secs_left > SLEEPBUFFER) {
+    if(secs_left >= 12) {
+      LowPower.powerDown(SLEEP_8S, ADC_OFF, BOD_OFF);
+    } else if(secs_left >= 8) {
+      LowPower.powerDown(SLEEP_4S, ADC_OFF, BOD_OFF);
+    } else {
+      LowPower.powerDown(SLEEP_1S, ADC_OFF, BOD_OFF);
+    }
+    secs_left = get_secs_to_new_minute();
   }
-  LowPower.powerDown(SLEEP_500MS, ADC_OFF, BOD_OFF);
   delay(20);
   Serial.begin(115200);
   delay(100);
 }
 
-
-int32_t unixtime_min = 0;
-
-int16_t clocks_time[48] = {0};
-byte clocks_last_state[6] = {0};
-
-// Settings
-uint8_t debug = 1;        // Write more stuff to the serial port
-uint8_t reset_eeprom = 6; // Reset the clock states if first boot after programming
-uint8_t startDay = 19;    // The number that the thing shows now
-uint8_t fast = 0;         // Don't use RTC, but instead progress as fast as possible. For debug.
 
 
 int32_t get_now() {
@@ -98,6 +117,7 @@ int32_t get_now() {
 }
 
 int32_t wait_new_minute() { // Wait to next minute
+  sleep();            // Sleep almost a minute
   int32_t prev_minute, new_minute;
   do{
     prev_minute = get_now();
@@ -340,7 +360,7 @@ void loop() {
     if((unixtime_min % MIN_IN_DAY) == ENDTIME) {
       write_clock_states(((uint8_t) get_day())); // Write clock states to EEPROM so power can be removed
     }
-      sleep(58);            // Sleep almost a minute
+
   }
 
 
