@@ -1,5 +1,7 @@
-// #define PIN_OUTPUT
-// #define DS1307
+#ifdef ARDUINO_AVR_MEGA2560
+#define PIN_OUTPUT
+#define DS1307
+#endif
 
 
 #include "RTClib.h"
