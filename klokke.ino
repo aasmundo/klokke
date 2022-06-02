@@ -174,7 +174,7 @@ void setup() {
 
   setupOutput();
 
-  // Start I2C for RTC
+  // Start the RTC
   rtc.begin();
 
   if(debug==1) {
