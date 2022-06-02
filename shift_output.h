@@ -5,7 +5,7 @@
 #define STATUS_PIN 2
 #define LBATT_PIN 3
 
-void shiftOut(byte myDataOut) {
+void shiftOut(byte myDataOut, uint8_t latchon) {
   digitalWrite(LATCH_PIN, 0);
   // This shifts 8 bits out MSB first
   uint8_t pinState;
@@ -16,7 +16,9 @@ void shiftOut(byte myDataOut) {
     digitalWrite(CLOCK_PIN, 1);
   }
   digitalWrite(CLOCK_PIN, 0);
-  digitalWrite(LATCH_PIN, 1);
+  if(latchon != 0) {
+    digitalWrite(LATCH_PIN, 1);
+  }
 }
 
 void setupOutput(void){
@@ -26,7 +28,7 @@ void setupOutput(void){
   pinMode(DATA_PIN, OUTPUT);
   pinMode(STATUS_PIN, OUTPUT);
   for(uint8_t i=0;i<6;i++) {
-    shiftOut(0x00);
+    shiftOut(0x00, i == 5 );
   }
   pinMode(STATUS_PIN, OUTPUT);
   pinMode(LBATT_PIN, OUTPUT);

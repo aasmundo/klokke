@@ -3,8 +3,8 @@
 #define FLASH_ARRAY_SIZE 10*24*2
 #define HS 60*60
 #define MS 60
-#define MIN_IN_DAY 1440// Minutes in a day
-#define ENDTIME 540    // Time the watches must be finished
+#define MIN_IN_DAY 24*60// Minutes in a day
+#define ENDTIME 6*60    // Time the watches must be finished
 #define bitRead(value, bit) (((value) >> (bit)) & 0x01)
 #define bitSet(value, bit) ((value) |= (1ULL << (bit)))
 #define bitClear(value, bit) ((value) &= ~(1ULL << (bit)))
@@ -18,6 +18,7 @@
 
 
 const uint8_t daysInMonth [] PROGMEM = { 31,28,31,30,31,30,31,31,30,31,30,31 };
+
 
 const uint8_t klokkeslett[FLASH_ARRAY_SIZE] PROGMEM = {
 // 0
@@ -102,5 +103,3 @@ int16_t getDest(uint8_t watch) {
   int16_t dest_min = 60*((int16_t) hour) + ((int16_t) minute);
   return dest_min;
   };
-
-
