@@ -66,24 +66,6 @@ uint8_t get_secs_to_new_minute() {
   }
 }
 
-<<<<<<< HEAD
-=======
-void shiftOut(byte myDataOut, uint8_t latchon) {
-  digitalWrite(LATCH_PIN, 0);
-  // This shifts 8 bits out MSB first
-  uint8_t pinState;
-  for (int8_t i=7; i>=0; i--)  {
-    digitalWrite(CLOCK_PIN, 0);
-    pinState = ( myDataOut & (1<<i) ) ? 1 : 0;
-    digitalWrite(DATA_PIN, pinState);
-    digitalWrite(CLOCK_PIN, 1);
-  }
-  digitalWrite(CLOCK_PIN, 0);
-  if(latchon != 0) {
-    digitalWrite(LATCH_PIN, 1);
-  }
-}
->>>>>>> 95e20f599ea2312976d58a16de70061b43a82295
 
 // Sleep for until its soon a new minute
 void sleep() {
@@ -189,26 +171,8 @@ void write_clock_states(uint8_t day) { // Shift out on/off to all the clocks
 }
 
 void setup() {
-<<<<<<< HEAD
 
   setupOutput();
-=======
-  // Set up pin state
-  pinMode(LATCH_PIN, OUTPUT);
-  pinMode(CLOCK_PIN, OUTPUT);
-  pinMode(DATA_PIN, OUTPUT);
-  pinMode(STATUS_PIN, OUTPUT);
-  for(uint8_t i=0;i<6;i++) {
-    shiftOut(0x00, i == 5 );
-  }
-  pinMode(STATUS_PIN, OUTPUT);
-  pinMode(LBATT_PIN, OUTPUT);
-  digitalWrite(STATUS_PIN, HIGH);
-  digitalWrite(LBATT_PIN,HIGH);
-  delay(500);
-  digitalWrite(STATUS_PIN, LOW);
-  digitalWrite(LBATT_PIN, LOW);
->>>>>>> 95e20f599ea2312976d58a16de70061b43a82295
 
   // Start I2C for RTC
   rtc.begin();
