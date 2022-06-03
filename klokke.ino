@@ -308,7 +308,7 @@ void update_states() {
           Serial.print(",");
         }
       }
-      shiftOut(clocks_last_state[i], i == 5);
+      shiftOut(clocks_last_state[i], i == 5, i);
     }
   }
   if(debug==1) {
