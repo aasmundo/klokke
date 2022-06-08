@@ -3,6 +3,12 @@
 #define DS1307
 #endif
 
+// TODO: 
+// vcc, 
+// sleep time less than a min, 
+// start clocks if time is after start time
+
+
 
 #include "RTClib.h"
 
@@ -32,8 +38,8 @@ byte clocks_last_state[6] = {0};
 
 // Settings
 uint8_t debug = 1;        // Write more stuff to the serial port
-uint8_t reset_eeprom = 2; // Reset the clock states if first boot after programming
-uint8_t startDay = 1;    // The number that the thing shows now
+uint8_t reset_eeprom = 1; // Reset the clock states if first boot after programming
+uint8_t startDay = 0;    // The number that the thing shows now
 uint8_t fast = 0;         // Don't use RTC, but instead progress as fast as possible. For debug.
 
 
@@ -204,6 +210,8 @@ void setup() {
 
   // Read the clock states stored in EEPROM
   startDay = EEPROM.read(0);
+  Serial.print("Start day: ");
+  Serial.println(startDay);
   uint8_t day[2];
   int8_t k;
   day[0] = startDay / 10;
@@ -248,7 +256,7 @@ void update_states() {
   day[1] = dom % 10;
   if(debug==1) { // Print the unixtime in milliseconds for offline simulation
     Serial.print(((uint32_t) (unixtime_min%MIN_IN_DAY))*6);
-    Serial.print("0000,");
+    Serial.println("0000,");
   }
 
   for(int8_t i=0;i<6;i++) {
@@ -283,9 +291,9 @@ void update_states() {
     // If a clock needs to start, set diff flag
     diff += start_byte != clocks_last_state[i] ? 1 : 0;
     Serial.print("start_byte, clocks_last_state[i], diff: ");
-    Serial.print(start_byte);
+    Serial.print(start_byte, BIN);
     Serial.print(", ");
-    Serial.print(clocks_last_state[i]);
+    Serial.print(clocks_last_state[i], BIN);
     Serial.print(", ");
     Serial.println(diff);
     // Turn on the clocks that needs to start
@@ -303,10 +311,11 @@ void update_states() {
   if(diff != 0) {
     for(uint8_t i=0;i<6;i++) {
       if(debug==1) {
-        for(int8_t j=7;j>=0;j--) {
-          Serial.print(bitRead(clocks_last_state[i],j));
-          Serial.print(",");
-        }
+        Serial.println(clocks_last_state[i],BIN);
+        // for(int8_t j=7;j>=0;j--) {
+        //   Serial.print(bitRead(clocks_last_state[i],j));
+        //   Serial.print(",");
+        // }
       }
       shiftOut(clocks_last_state[i], i == 5, i);
     }

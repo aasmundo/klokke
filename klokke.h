@@ -1,10 +1,10 @@
 
 #include <avr/pgmspace.h>
-#define FLASH_ARRAY_SIZE 10*24*2
-#define HS 60*60
-#define MS 60
-#define MIN_IN_DAY 24*60// Minutes in a day
-#define ENDTIME 6*60    // Time the watches must be finished
+#define FLASH_ARRAY_SIZE (10*24*2)
+#define HS (60*60)
+#define MS (60)
+#define MIN_IN_DAY (24*60) // Minutes in a day
+#define ENDTIME (7*60) // Time the watches must be finished
 #define bitRead(value, bit) (((value) >> (bit)) & 0x01)
 #define bitSet(value, bit) ((value) |= (1ULL << (bit)))
 #define bitClear(value, bit) ((value) &= ~(1ULL << (bit)))
