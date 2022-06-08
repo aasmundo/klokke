@@ -1,3 +1,4 @@
+#include "klokke.h"
 #define LBATT_PIN 19
 #define N_CLOCKS 48
 
@@ -43,8 +44,10 @@ void shiftOut(byte myDataOut, uint8_t latchon, uint8_t row) {
     uint8_t pin_number = pins[(N_CLOCKS -1) - (row * 8 + i)];
     if(bitRead(myDataOut, i) == 1) {
       turnOnPin(pin_number);
-      Serial.print("Turning on pin ");
-      Serial.println(pin_number);
+      if(debug & DBG_OUTPUTS){
+        Serial.print(F("Turning on pin "));
+        Serial.println(pin_number);
+      }
     } else {
       turnOffPin(pin_number);
     }
