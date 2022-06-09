@@ -6,8 +6,6 @@
 // TODO: 
 // Daylight saving time: https://www.instructables.com/Adding-Daylight-Savings-Time-to-Your-RTC/
 
-
-
 #include "RTClib.h"
 
 #include <avr/power.h>
@@ -126,31 +124,6 @@ uint8_t getTomorrow(DateTime now) {
   return tomorrow.day();
 }
 
-int32_t getTomorrow(uint8_t day, uint8_t month, int32_t year) {
-  uint8_t leap_year = 0;
-  if ((year % 4 == 0 && year % 100 != 0) || year % 400 == 0) {
-    leap_year = 1;
-  }
-  uint8_t monthLength[12];
-  monthLength[0] = 31;
-  monthLength[1] = leap_year == 1 ? 29 : 28;
-  monthLength[2] = 31;
-  monthLength[3] = 30;
-  monthLength[4] = 31;
-  monthLength[5] = 30;
-  monthLength[6] = 31;
-  monthLength[7] = 31;
-  monthLength[8] = 30;
-  monthLength[9] = 31;
-  monthLength[10] = 30;
-  monthLength[11] = 31;
-  day += 1;
-  if(day > monthLength[month-1]) {
-    day = 1;
-  }
-  return (int32_t) day;
-}
-
 int32_t get_day() { // Get day of the month
   DateTime now = rtc.now();
   if(now.day() >31) {
@@ -222,8 +195,7 @@ void setup() {
   }
 }
 
-// Calculate how many minutes a clock must run to reach
-// the goal state
+// Calculate how many minutes a clock must run to reach the goal state
 int16_t calc_runtime(int16_t state_now, int16_t goal_state) {
   if(state_now == goal_state) {
     return 0;
@@ -366,8 +338,5 @@ void loop() {
     if((unixtime_min % MIN_IN_DAY) == ENDTIME) {
       write_clock_states(((uint8_t) get_day())); // Write clock states to EEPROM so power can be removed
     }
-
   }
-
-
 }
