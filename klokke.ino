@@ -338,8 +338,10 @@ void low_battery() {
   } else {
     digitalWrite(LBATT_PIN, LOW);
   }
-  Serial.print(F("MCU voltage: "));
-  Serial.println((uint32_t) mv_batt);
+  if(debug & DBG_VOLTAGE) {
+    Serial.print(F("MCU voltage: "));
+    Serial.println((uint32_t) mv_batt);
+  }
 #ifdef PIN_OUTPUT
   readVoltages();
 #endif
@@ -351,8 +353,10 @@ void loop() {
   unixtime_min = wait_new_minute();
   // Update the clock states
   update_states();
-  Serial.print(F("unixtime_min: "));
-  Serial.println(unixtime_min);
+  if(debug) {
+    Serial.print(F("unixtime_min: "));
+    Serial.println(unixtime_min);
+  }
   Serial.print(F("unixtime_min_day: "));
   Serial.print((unixtime_min % 1440) / 60);
   Serial.print(F(":"));

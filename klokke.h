@@ -22,10 +22,11 @@
 #define DBG_TIME_CALC 1
 #define DBG_OUTPUTS   2
 #define DBG_SLEEP     4
+#define DBG_VOLTAGE   8
 
 
 // Settings
-uint8_t debug = DBG_TIME_CALC | DBG_OUTPUTS; // Write more stuff to the serial port
+uint8_t debug = DBG_TIME_CALC | DBG_OUTPUTS | DBG_SLEEP; // Write more stuff to the serial port
 uint8_t reset_eeprom = 1; // Reset the clock states if first boot after programming
 uint8_t startDay = 0;    // The number that the thing shows now
 uint8_t fast = 0;         // Don't use RTC, but instead progress as fast as possible. For debug.

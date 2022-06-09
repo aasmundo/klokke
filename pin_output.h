@@ -65,12 +65,14 @@ void readVoltages(void) {
   long battery_voltage = readAnalogVoltage(BATT_MEAS_PIN,10);
   long rtc_voltage = readAnalogVoltage(RTC_BATT_PIN,10);
   long clock_voltage = readAnalogVoltage(CLOCK_VOLTAGE_PIN,10);
-  Serial.print(F("Battery voltage: "));
-  Serial.println(battery_voltage);
-  Serial.print(F("RTC battery voltage: "));
-  Serial.println(rtc_voltage);
-  Serial.print(F("Clock voltage: "));
-  Serial.println(clock_voltage);
+  if(debug & DBG_VOLTAGE) {
+    Serial.print(F("Battery voltage: "));
+    Serial.println(battery_voltage);
+    Serial.print(F("RTC battery voltage: "));
+    Serial.println(rtc_voltage);
+    Serial.print(F("Clock voltage: "));
+    Serial.println(clock_voltage);
+  }
   if(battery_voltage < 3500 && battery_voltage > 1000){
     digitalWrite(LBATT_PIN,HIGH);
     delay(200);
