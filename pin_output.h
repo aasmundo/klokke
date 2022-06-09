@@ -1,5 +1,9 @@
 #include "klokke.h"
+#define TEMP_PIN 18
 #define LBATT_PIN 19
+#define BATT_MEAS_PIN A0
+#define RTC_BATT_PIN A1
+#define CLOCK_VOLTAGE_PIN A2
 #define N_CLOCKS 48
 
 // Seen from the back
@@ -36,6 +40,41 @@ void turnOnPin(uint8_t pin_number){
 void setupOutput(void){
   for(uint8_t i = 0; i < N_CLOCKS; i++) {
     turnOffPin(pins[i]);
+  }
+  pinMode(LBATT_PIN, OUTPUT);
+  digitalWrite(LBATT_PIN,HIGH);
+  delay(100);
+  digitalWrite(LBATT_PIN, LOW);
+
+  // Also setup some inputs
+  pinMode(BATT_MEAS_PIN, INPUT);
+  pinMode(RTC_BATT_PIN, INPUT);
+  pinMode(CLOCK_VOLTAGE_PIN, INPUT);
+}
+
+long readAnalogVoltage(uint8_t pin, uint8_t measurements){
+  long voltage = 0;
+  for(uint8_t i=0; i<measurements; i++){
+    voltage += (long)analogRead(pin);
+  }
+  voltage = ((voltage / measurements) * 5000) / 1024;
+  return voltage;
+}
+
+void readVoltages(void) {
+  long battery_voltage = readAnalogVoltage(BATT_MEAS_PIN,10);
+  long rtc_voltage = readAnalogVoltage(RTC_BATT_PIN,10);
+  long clock_voltage = readAnalogVoltage(CLOCK_VOLTAGE_PIN,10);
+  Serial.print(F("Battery voltage: "));
+  Serial.println(battery_voltage);
+  Serial.print(F("RTC battery voltage: "));
+  Serial.println(rtc_voltage);
+  Serial.print(F("Clock voltage: "));
+  Serial.println(clock_voltage);
+  if(battery_voltage < 3500 && battery_voltage > 1000){
+    digitalWrite(LBATT_PIN,HIGH);
+    delay(200);
+    digitalWrite(LBATT_PIN, LOW);
   }
 }
 

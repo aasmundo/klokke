@@ -4,7 +4,6 @@
 #endif
 
 // TODO: 
-// Test get tomorrow function
 // Daylight saving time: https://www.instructables.com/Adding-Daylight-Savings-Time-to-Your-RTC/
 
 
@@ -160,7 +159,7 @@ int32_t get_day() { // Get day of the month
     if(fast==1) {
       return (int32_t) ((unixtime_min/MIN_IN_DAY)%32);
     } else {
-      int32_t result = (now.hour() > (ENDTIME / 60)) ? getTomorrow(now.day(), now.month(), ((int32_t) now.year()) + 1900) : ((int32_t) now.day());
+      int32_t result = (now.hour() > (ENDTIME / 60)) ? getTomorrow(now) : ((int32_t) now.day());
       return result;
     }
   }
@@ -192,6 +191,13 @@ void setup() {
     Serial.print(now.minute());
     Serial.print(F(":"));
     Serial.println(now.second());
+
+    if(now.day() == 0){
+      Serial.println(F("RTC time not set!"));
+      digitalWrite(LBATT_PIN,HIGH);
+      delay(2000);
+      digitalWrite(LBATT_PIN, LOW);
+    }
   }
 
   // Reset the EEPROM
@@ -246,7 +252,11 @@ void update_states() {
   uint8_t diff = 0;        // If there is a diff, one or more clocks needs to turn on
   day[0] = dom / 10;
   day[1] = dom % 10;
-  if(debug) { // Print the unixtime in milliseconds for offline simulation
+  if(debug) {
+    Serial.print(F("Target day: "));
+    Serial.print(day[0]);
+    Serial.println(day[1]);
+    // Print the unixtime in milliseconds for offline simulation
     Serial.print(F("Unixtime in ms: "));
     Serial.print(((uint32_t) (unixtime_min%MIN_IN_DAY))*6);
     Serial.println(F("0000,"));
@@ -328,8 +338,11 @@ void low_battery() {
   } else {
     digitalWrite(LBATT_PIN, LOW);
   }
-  Serial.print(F("Batt: "));
+  Serial.print(F("MCU voltage: "));
   Serial.println((uint32_t) mv_batt);
+#ifdef PIN_OUTPUT
+  readVoltages();
+#endif
 }
 
 void loop() {
