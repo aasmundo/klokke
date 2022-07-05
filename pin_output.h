@@ -73,7 +73,7 @@ void readVoltages(void) {
     Serial.print(F("Clock voltage: "));
     Serial.println(clock_voltage);
   }
-  if(battery_voltage < 3500 && battery_voltage > 1000){
+  if(battery_voltage < 3300 && battery_voltage > 1000){
     digitalWrite(LBATT_PIN,HIGH);
     delay(200);
     digitalWrite(LBATT_PIN, LOW);
