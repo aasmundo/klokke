@@ -1,6 +1,6 @@
 #ifdef ARDUINO_AVR_MEGA2560
 #define PIN_OUTPUT
-#define DS1307
+// #define DS1307
 #endif
 
 // TODO: 
@@ -30,6 +30,17 @@ int32_t unixtime_min = 0;
 
 int16_t clocks_time[48] = {0};
 byte clocks_last_state[6] = {0};
+
+void print_time(int32_t unixtime_min){
+  int16_t hours = unixtime_min / 60;
+  int16_t minutes = unixtime_min % 60;
+  Serial.print(hours);
+  Serial.print(":");
+  if (minutes < 10) {
+    Serial.print("0");
+  }
+  Serial.print(minutes);
+}
 
 uint8_t get_secs_to_new_minute() {
   uint64_t tid = millis();
@@ -141,7 +152,6 @@ int32_t get_day() { // Get day of the month
 
 void write_clock_states(uint8_t day) { // Shift out on/off to all the clocks
     EEPROM.write(0,day);
-    EEPROM.write(10,reset_eeprom);
 }
 
 void setup() {
@@ -165,18 +175,21 @@ void setup() {
     Serial.print(F(":"));
     Serial.println(now.second());
 
-    if(now.day() == 0){
+    if((now.day() == 0) || (now.year() == 2000)) {
       Serial.println(F("RTC time not set!"));
       digitalWrite(LBATT_PIN,HIGH);
       delay(2000);
       digitalWrite(LBATT_PIN, LOW);
+      rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+      Serial.println(F("RTC set to compile time"));
     }
   }
 
   // Reset the EEPROM
-  if (reset_eeprom != EEPROM.read(10)) {
+  if (startDay != 0) {
     write_clock_states(startDay);
-    Serial.println(F("Loaded new day in to EEPROM"));
+    Serial.print(F("Loaded new day in to EEPROM: "));
+    Serial.println(startDay);
   }
 
   // Read the clock states stored in EEPROM
@@ -210,7 +223,7 @@ int16_t calc_runtime(int16_t state_now, int16_t goal_state) {
 // to finish its runtime at the given endtime
 int16_t calc_start_time(int16_t runtime) {
   int16_t start_time = ENDTIME - runtime;
-  start_time = start_time < 0 ? start_time + 1440 : start_time;
+  start_time = start_time < 0 ? start_time + MIN_IN_DAY : start_time;
   return start_time;
 }
 
@@ -236,6 +249,8 @@ void update_states() {
 
   for(int8_t i=0;i<6;i++) {
     byte start_byte = 0;
+    if (debug & DBG_TIME_CALC)
+      Serial.println(F("goal_state, clocks_time, startime, unixtime: "));
     for(int8_t j=0;j<8;j++) {
       k = i*8 + j;
       // If the clock was on the last minute, update the state
@@ -247,14 +262,14 @@ void update_states() {
       // Find the starttime of this clock given the goal state and the endtime
       starttime = calc_start_time(calc_runtime(clocks_time[k],goal_state));
       if (debug & DBG_TIME_CALC) {
-        Serial.print(F("goal_state, clocks_time, startime, unixtime%1440: "));
-        Serial.print(goal_state);
+        print_time(goal_state);
         Serial.print(F(", "));
-        Serial.print(clocks_time[k]);
+        print_time(clocks_time[k]);
         Serial.print(F(", "));
-        Serial.print(starttime);
+        print_time(starttime);
         Serial.print(F(", "));
-        Serial.println(unixtime_min % MIN_IN_DAY);
+        print_time(unixtime_min % MIN_IN_DAY);
+        Serial.println();
       }
       // Check if clock needs to start now
       if ((unixtime_min % MIN_IN_DAY) == starttime) { // Start the clock if time is "starttime"
@@ -329,10 +344,8 @@ void loop() {
     Serial.print(F("unixtime_min: "));
     Serial.println(unixtime_min);
   }
-  Serial.print(F("unixtime_min_day: "));
-  Serial.print((unixtime_min % 1440) / 60);
-  Serial.print(F(":"));
-  Serial.println((unixtime_min % 1440) % 60);
+  print_time(unixtime_min % MIN_IN_DAY);
+  Serial.println();
   if(fast==0){ // Skip sleep and EEPROM write if in fast mode
     low_battery(); // Check battery level
     if((unixtime_min % MIN_IN_DAY) == ENDTIME) {

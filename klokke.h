@@ -13,16 +13,17 @@
 #define SLEEPBUFFER 2  //Sleep margin. Lowest safe value is 2
 
 // Debug options
+#define DBG_NONE      0
 #define DBG_TIME_CALC 1
 #define DBG_OUTPUTS   2
 #define DBG_SLEEP     4
 #define DBG_VOLTAGE   8
+#define DBG_ALL       (DBG_TIME_CALC | DBG_OUTPUTS | DBG_SLEEP | DBG_VOLTAGE)
 
 // Settings
-uint8_t debug = DBG_TIME_CALC | DBG_OUTPUTS | DBG_SLEEP | DBG_VOLTAGE; // Write more stuff to the serial port
-uint8_t reset_eeprom = 1; // Reset the clock states if first boot after programming
-uint8_t startDay = 0;    // The number that the thing shows now
-uint8_t fast = 0;         // Don't use RTC, but instead progress as fast as possible. For debug.
+uint8_t debug = DBG_VOLTAGE;  // Write more stuff to the serial port
+uint8_t startDay = 0;         // The number that the clock shows now. If set to anything else than 0 the EEPROM will be overwritten
+uint8_t fast = 0;             // Don't use RTC, but instead progress as fast as possible. For debug.
 
 const uint8_t klokkeslett[FLASH_ARRAY_SIZE] PROGMEM = {
 // 0
