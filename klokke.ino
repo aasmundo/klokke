@@ -21,6 +21,8 @@ int32_t unixtime_min = 0;
 
 int16_t clocks_time[48] = {0};
 byte clocks_last_state[6] = {0};
+bool disable = false;  //Don't start the clocks (late start or low batt)
+
 
 // Settings
 uint8_t debug = 1;        // Write more stuff to the serial port
@@ -28,6 +30,15 @@ uint8_t reset_eeprom = 2; // Reset the clock states if first boot after programm
 uint8_t startDay = 1;    // The number that the thing shows now
 uint8_t fast = 0;         // Don't use RTC, but instead progress as fast as possible. For debug.
 
+
+bool are_clocks_running() {
+  for (uint8_t i=0; i < 6; i++) {
+    if(clocks_last_state[i] != 0) {
+      return true;
+    }
+  }
+  return false;
+}
 
 long readVcc() {
   long result;
@@ -154,6 +165,7 @@ int32_t getTomorrow(uint8_t day, uint8_t month, int32_t year) {
   return (int32_t) day;
 }
 
+
 int32_t get_day() { // Get day of the month
   DateTime now = RTC.now();
   if(now.day() >31) {
@@ -209,6 +221,12 @@ void setup() {
     Serial.print(now.minute());
     Serial.print(":");
     Serial.println(now.second());
+  }
+
+  // Disable if powered on less than 12 hours before ENDTIME
+  int32_t starttime = get_now() % 1440;
+  if(starttime < ENDTIME || starttime > (ENDTIME + 720)) {
+    disable = true;
   }
 
   // Reset the EEPROM
@@ -307,8 +325,8 @@ void update_states() {
     clocks_last_state[i] |= start_byte;
     // If the end time has been reached. Force the diff flag
     // and turn off all clocks
-    if ((unixtime_min % MIN_IN_DAY) == ENDTIME) {
-      diff = 1;
+    if (((unixtime_min % MIN_IN_DAY) == ENDTIME) || disable) {
+      diff = disable ? 0 : 1;
       clocks_last_state[i] = 0;
     }
 
@@ -336,6 +354,9 @@ void low_battery() {
   long mv_batt = readVcc();
   if(mv_batt < 3300 ) {
     digitalWrite(LBATT_PIN, HIGH);
+    if(!are_clocks_running()) {
+      disable = true;
+    }
   } else {
     digitalWrite(LBATT_PIN, LOW);
   }
@@ -359,6 +380,7 @@ void loop() {
     low_battery(); // Check battery level
     if((unixtime_min % MIN_IN_DAY) == ENDTIME) {
       write_clock_states(((uint8_t) get_day())); // Write clock states to EEPROM so power can be removed
+      disable = false;
     }
 
   }
