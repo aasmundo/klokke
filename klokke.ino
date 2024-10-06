@@ -7,17 +7,22 @@
 #include <LowPower.h>
 
 #define MIN_IN_DAY 1440// Minutes in a day
-#define ENDTIME 360    // Time the watches must be finished
+#define ENDTIME_W 420    // Time the watches must be finished (winter)
+#define ENDTIME_S 360  // Time the watches must be finished during the summer
+#define DLSTIME 500    // Time that daylight savings adjustment is checked
 #define STATUS_PIN 2
 #define LBATT_PIN 3
 #define LATCH_PIN 8    //Pin connected to ST_CP of 74HC595
 #define CLOCK_PIN 12   //Pin connected to SH_CP of 74HC595
 #define DATA_PIN 11    //Pin connected to DS of 74HC595
 #define SLEEPBUFFER 2  //Sleep margin
+#define LBATTVOLTAGE 3450
 
 RTClib RTC;
 
 int32_t unixtime_min = 0;
+uint8_t dayOfWeek = 0;
+uint32_t ENDTIME = ENDTIME_W;
 
 int16_t clocks_time[48] = {0};
 byte clocks_last_state[6] = {0};
@@ -26,8 +31,8 @@ bool disable = false;  //Don't start the clocks (late start or low batt)
 
 // Settings
 uint8_t debug = 1;        // Write more stuff to the serial port
-uint8_t reset_eeprom = 2; // Reset the clock states if first boot after programming
-uint8_t startDay = 1;    // The number that the thing shows now
+uint8_t reset_eeprom = 5; // Reset the clock states if first boot after programming
+uint8_t startDay = 23;    // The number that the thing shows now
 uint8_t fast = 0;         // Don't use RTC, but instead progress as fast as possible. For debug.
 
 
@@ -107,8 +112,6 @@ void sleep() {
   delay(100);
 }
 
-
-
 int32_t get_now() {
   uint64_t tid = millis();
   DateTime now = RTC.now();
@@ -165,6 +168,21 @@ int32_t getTomorrow(uint8_t day, uint8_t month, int32_t year) {
   return (int32_t) day;
 }
 
+void setEndTime() { // Switches to winter/summertime 1st of Nov and April. No support for DoW in RTC DateTime type
+  DateTime now = RTC.now();
+  int32_t day = getTomorrow(now.day(), now.month(), ((int32_t) now.year()) + 1900);
+  if(day == 31) {
+    if(now.month() == 3) {
+      ENDTIME = ENDTIME_S;
+    } else if (now.month() == 10) {
+      ENDTIME = ENDTIME_W;
+    }
+  } else if (now.month() >= 4 && now.month() <= 10) {
+    ENDTIME = ENDTIME_S;
+  } else {
+    ENDTIME = ENDTIME_W;
+  }
+}
 
 int32_t get_day() { // Get day of the month
   DateTime now = RTC.now();
@@ -247,6 +265,8 @@ void setup() {
       clocks_time[k] = getDest((24*day[j/4]+((4*(5-i))+(j%4))));
     }
   }
+
+  setEndTime();
 }
 
 // Calculate how many minutes a clock must run to reach
@@ -348,17 +368,30 @@ void update_states() {
     Serial.println(F("NEXT"));
   }
 }
+bool is_battery_low() {
+  long mv_batt = readVcc();
+  return (mv_batt < LBATTVOLTAGE);
+}
 
+void low_batt_blink() {
+  Serial.end();
+  while(is_battery_low()) {
+    digitalWrite(LBATT_PIN, HIGH);
+    LowPower.powerDown(SLEEP_120MS, ADC_OFF, BOD_OFF);
+    digitalWrite(LBATT_PIN, LOW);
+    LowPower.powerDown(SLEEP_2S, ADC_OFF, BOD_OFF);
+  }
+  Serial.begin(115200);
+}
 // Read the VCC voltage and drive the battery status LEDs
 void low_battery() {
   long mv_batt = readVcc();
-  if(mv_batt < 3300 ) {
-    digitalWrite(LBATT_PIN, HIGH);
-    if(!are_clocks_running()) {
+  if(is_battery_low() && !are_clocks_running()) {
       disable = true;
-    }
+      low_batt_blink();
   } else {
     digitalWrite(LBATT_PIN, LOW);
+    disable = false;
   }
   Serial.print("Batt: ");
   Serial.println((uint32_t) mv_batt);
@@ -377,12 +410,14 @@ void loop() {
   Serial.print(":");
   Serial.println((unixtime_min % 1440) % 60);
   if(fast==0){ // Skip sleep and EEPROM write if in fast mode
-    low_battery(); // Check battery level
     if((unixtime_min % MIN_IN_DAY) == ENDTIME) {
-      write_clock_states(((uint8_t) get_day())); // Write clock states to EEPROM so power can be removed
+      if (disable == false) {
+        write_clock_states(((uint8_t) get_day())); // Write clock states to EEPROM so power can be removed
+        setEndTime();
+      }
+      low_battery(); // Check battery level
       disable = false;
     }
-
   }
 
 
