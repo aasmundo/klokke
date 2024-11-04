@@ -1,26 +1,24 @@
-#include <Wire.h>
 #include <DS3231.h>
-#include <avr/power.h>
+#include <Wire.h>
+#include <avr/sleep.h>
 
 #include "klokke.h"
 #include <EEPROM.h>
-#include <LowPower.h>
 
 #define MIN_IN_DAY 1440// Minutes in a day
 #define ENDTIME_W 420    // Time the watches must be finished (winter)
 #define ENDTIME_S 360  // Time the watches must be finished during the summer
+#define EVENINGTIME 1080 // 18:00
 #define DLSTIME 500    // Time that daylight savings adjustment is checked
-#define STATUS_PIN 2
-#define LBATT_PIN 3
-#define LATCH_PIN 8    //Pin connected to ST_CP of 74HC595
-#define CLOCK_PIN 12   //Pin connected to SH_CP of 74HC595
-#define DATA_PIN 11    //Pin connected to DS of 74HC595
-#define SLEEPBUFFER 2  //Sleep margin
 #define LBATTVOLTAGE 3450
 
-RTClib RTC;
+DS3231 myRTC;
+bool century = false;
+bool h12 = false;
+bool pm = false;
 
-int32_t unixtime_min = 0;
+
+int64_t unixtime_min = 0;
 uint8_t dayOfWeek = 0;
 uint32_t ENDTIME = ENDTIME_W;
 
@@ -36,6 +34,17 @@ uint8_t startDay = 23;    // The number that the thing shows now
 uint8_t fast = 0;         // Don't use RTC, but instead progress as fast as possible. For debug.
 
 
+void enter_power_down_mode() {
+    set_sleep_mode(SLEEP_MODE_PWR_DOWN);  // Set power-down sleep mode
+    sleep_enable();                       // Enable sleep mode
+
+    // Go to sleep (CPU halts here until interrupt occurs)
+    sleep_cpu();
+
+    // Code resumes here after interrupt
+    sleep_disable();  // Disable sleep mode on wakeup
+}
+
 bool are_clocks_running() {
   for (uint8_t i=0; i < 6; i++) {
     if(clocks_last_state[i] != 0) {
@@ -48,7 +57,7 @@ bool are_clocks_running() {
 long readVcc() {
   long result;
   // Read 1.1V reference against AVcc
-  ADMUX = _BV(REFS0) | _BV(MUX3) | _BV(MUX2) | _BV(MUX1);
+  ADMUX = _BV(REFS0) | _BV(MUX4) | _BV(MUX3) | _BV(MUX2) | _BV(MUX1);
   delay(2); // Wait for Vref to settle
   ADCSRA |= _BV(ADSC); // Convert
   while (bit_is_set(ADCSRA,ADSC));
@@ -58,84 +67,60 @@ long readVcc() {
   return result;
 }
 
-uint8_t get_secs_to_new_minute() {
-  uint64_t tid = millis();
-  DateTime now = RTC.now();
-  if((millis() - tid) > 500) { // RTC most likely did not respond
-    if(debug==1) {
-      Serial.print(F("RTC timeout."));
-    }
-    delay(100);
-    return 0;
-  } else {
-    if(fast==1) {
-      return 0;
-    }else{
-      return (uint8_t) (60 - now.second());
+void reduce_power() {
+  PRR  |= 1 << PRLCD;  // Disable atmega169 LCD circuitry
+  PRR  |= 1 << PRTIM1; // Disable time1
+  ACSR |= 1 << ACD;    // Disable analog comparator
+}
+
+void setup_alarm() {
+    myRTC.turnOffAlarm(1);
+    myRTC.setA1Time(0, 0, 0, 0, 0b1110, 1, 0, 0);
+    // enable Alarm 1 interrupts
+    myRTC.turnOnAlarm(1);
+    // clear Alarm 1 flag
+    myRTC.checkIfAlarm(1);
+    
+    // Upload the parameters to prevent Alarm 2 entirely
+    myRTC.setA2Time(0, 0, 0, 0b01100000, 1, 0, 0);
+    // disable Alarm 2 interrupt
+    myRTC.turnOffAlarm(2);
+    // clear Alarm 2 flag
+    myRTC.checkIfAlarm(2);
+    // attach clock interrupt
+    pinMode(PIN_PD1, INPUT_PULLUP);
+    attachInterrupt(digitalPinToInterrupt(PIN_PD1), isr_wakeup, LOW); // Dont use "FALLING" because this requires clk
+}
+
+void apply_clock_states_row(uint8_t states, uint8_t row) {
+  for(uint8_t column=0; column<8; column++) {
+    uint8_t pin = get_pin(row, column);
+    if(bitRead(states, column)) { // Turn the clock on by setting pin LOW
+      pinMode(pin, OUTPUT);
+      digitalWrite(pin, LOW);
+    } else { // Turn the clock off by setting the pin to Z
+      pinMode(pin, INPUT);
     }
   }
 }
 
-void shiftOut(byte myDataOut, uint8_t latchon) {
-  digitalWrite(LATCH_PIN, 0);
-  // This shifts 8 bits out MSB first
-  uint8_t pinState;
-  for (int8_t i=7; i>=0; i--)  {
-    digitalWrite(CLOCK_PIN, 0);
-    pinState = ( myDataOut & (1<<i) ) ? 1 : 0;
-    digitalWrite(DATA_PIN, pinState);
-    digitalWrite(CLOCK_PIN, 1);
-  }
-  digitalWrite(CLOCK_PIN, 0);
-  if(latchon != 0) {
-    digitalWrite(LATCH_PIN, 1);
+int64_t get_now() {
+  DateTime now = DateTime(myRTC.getYear(), myRTC.getMonth(century), myRTC.getDate());
+  if(fast==1) {
+    return (int32_t) (unixtime_min + random(0,2));
+  }else{
+    return (int32_t) (now.unixtime() / 60);
   }
 }
 
-// Sleep for until its soon a new minute
-void sleep() {
-  uint8_t secs_left = get_secs_to_new_minute();
-  Serial.end();
-  delay(10);
-  while(secs_left > SLEEPBUFFER) {
-    if(secs_left >= 12) {
-      LowPower.powerDown(SLEEP_8S, ADC_OFF, BOD_OFF);
-    } else if(secs_left >= 8) {
-      LowPower.powerDown(SLEEP_4S, ADC_OFF, BOD_OFF);
-    } else {
-      LowPower.powerDown(SLEEP_1S, ADC_OFF, BOD_OFF);
-    }
-    secs_left = get_secs_to_new_minute();
-  }
-  delay(20);
-  Serial.begin(115200);
-  delay(100);
-}
-
-int32_t get_now() {
-  uint64_t tid = millis();
-  DateTime now = RTC.now();
-  if((millis() - tid) > 500) { // RTC most likely did not respond
-    if(debug==1) {
-      Serial.print(F("RTC timeout."));
-    }
-    delay(100);
-    return -1;
-  } else {
-    if(fast==1) {
-      return (int32_t) (unixtime_min + random(0,2));
-    }else{
-      return (int32_t) (now.unixtime() / 60);
-    }
-  }
-}
-
-int32_t wait_new_minute() { // Wait to next minute
-  sleep();            // Sleep almost a minute
-  int32_t prev_minute, new_minute;
+int64_t wait_new_minute() { // Wait to next minute
+  int64_t prev_minute, new_minute;
   do{
     prev_minute = get_now();
   } while(prev_minute == -1);
+  if(fast == 0) {
+    enter_power_down_mode();
+  }
   do{
     new_minute = get_now();
 
@@ -168,31 +153,21 @@ int32_t getTomorrow(uint8_t day, uint8_t month, int32_t year) {
   return (int32_t) day;
 }
 
-void setEndTime() { // Switches to winter/summertime 1st of Nov and April. No support for DoW in RTC DateTime type
-  DateTime now = RTC.now();
-  int32_t day = getTomorrow(now.day(), now.month(), ((int32_t) now.year()) + 1900);
-  if(day == 31) {
-    if(now.month() == 3) {
-      ENDTIME = ENDTIME_S;
-    } else if (now.month() == 10) {
-      ENDTIME = ENDTIME_W;
-    }
-  } else if (now.month() >= 4 && now.month() <= 10) {
-    ENDTIME = ENDTIME_S;
-  } else {
-    ENDTIME = ENDTIME_W;
-  }
+void setEndTime() {
+  int32_t day = getTomorrow(myRTC.getDate(), myRTC.getMonth(century), ((int32_t) myRTC.getYear()) + 2000);
+  uint8_t DoW_tomorrow = myRTC.getDoW() == 7 ? 1 : myRTC.getDoW() + 1;
+  bool winterTime = isNorwegianWinterTime(myRTC.getMonth(century), (uint8_t) day, DoW_tomorrow);
+  ENDTIME = winterTime ? ENDTIME_W : ENDTIME_S;
 }
 
 int32_t get_day() { // Get day of the month
-  DateTime now = RTC.now();
-  if(now.day() >31) {
+  if(myRTC.getDate() >31) {
     return 99;
   }else {
     if(fast==1) {
       return (int32_t) ((unixtime_min/MIN_IN_DAY)%32);
     } else {
-      int32_t result = (now.hour() > (ENDTIME / 60)) ? getTomorrow(now.day(), now.month(), ((int32_t) now.year()) + 1900) : ((int32_t) now.day());
+      int32_t result = (myRTC.getHour(h12, pm) > (ENDTIME / 60)) ? getTomorrow(myRTC.getDate(), myRTC.getMonth(century), ((int32_t) myRTC.getYear()) + 2000) : ((int32_t) myRTC.getDate());
       return result;
     }
   }
@@ -206,43 +181,34 @@ void write_clock_states(uint8_t day) { // Shift out on/off to all the clocks
 
 void setup() {
   // Set up pin state
-  pinMode(LATCH_PIN, OUTPUT);
-  pinMode(CLOCK_PIN, OUTPUT);
-  pinMode(DATA_PIN, OUTPUT);
-  pinMode(STATUS_PIN, OUTPUT);
   for(uint8_t i=0;i<6;i++) {
-    shiftOut(0x00, i == 5 );
+    apply_clock_states_row(0x00, i == 5);
   }
-  pinMode(STATUS_PIN, OUTPUT);
-  pinMode(LBATT_PIN, OUTPUT);
-  digitalWrite(STATUS_PIN, HIGH);
-  digitalWrite(LBATT_PIN,HIGH);
-  delay(500);
-  digitalWrite(STATUS_PIN, LOW);
-  digitalWrite(LBATT_PIN, LOW);
 
   // Start I2C for RTC
   Wire.begin();
+  setup_alarm();
 
   if(debug==1) {
     Serial.begin(115200);
     Serial.println(F("Starting"));
-    DateTime now = RTC.now();
-    Serial.print(now.day());
+    Serial.print(myRTC.getDate());
     Serial.print("/");
-    Serial.print(now.month());
+    Serial.print(myRTC.getMonth(century));
     Serial.print("/");
-    Serial.print(now.year());
+    Serial.print(myRTC.getYear());
     Serial.print(" ");
-    Serial.print(now.hour());
+    Serial.print(myRTC.getHour(h12, pm));
     Serial.print(":");
-    Serial.print(now.minute());
+    Serial.print(myRTC.getMinute());
     Serial.print(":");
-    Serial.println(now.second());
+    Serial.print(myRTC.getSecond());
+    Serial.print("   DoW:");
+    Serial.println(myRTC.getDoW());
   }
 
   // Disable if powered on less than 12 hours before ENDTIME
-  int32_t starttime = get_now() % 1440;
+  uint32_t starttime = get_now() % 1440;
   if(starttime < ENDTIME || starttime > (ENDTIME + 720)) {
     disable = true;
   }
@@ -267,6 +233,10 @@ void setup() {
   }
 
   setEndTime();
+  // Wait until next day in case power/reset in the evening
+  do {
+    unixtime_min = wait_new_minute();
+  } while (((unixtime_min%MIN_IN_DAY) > EVENINGTIME) || ((unixtime_min%MIN_IN_DAY) < ENDTIME));
 }
 
 // Calculate how many minutes a clock must run to reach
@@ -324,7 +294,7 @@ void update_states() {
         Serial.print(", ");
         Serial.print(starttime);
         Serial.print(", ");
-        Serial.println(unixtime_min % MIN_IN_DAY);
+        Serial.println((int32_t) (unixtime_min % MIN_IN_DAY));
       }
       // Check if clock needs to start now
       if ((unixtime_min % MIN_IN_DAY) == starttime) { // Start the clock if time is "starttime"
@@ -361,7 +331,7 @@ void update_states() {
           Serial.print(",");
         }
       }
-      shiftOut(clocks_last_state[i], i == 5);
+      apply_clock_states_row(clocks_last_state[i],i);
     }
   }
   if(debug==1) {
@@ -373,24 +343,12 @@ bool is_battery_low() {
   return (mv_batt < LBATTVOLTAGE);
 }
 
-void low_batt_blink() {
-  Serial.end();
-  while(is_battery_low()) {
-    digitalWrite(LBATT_PIN, HIGH);
-    LowPower.powerDown(SLEEP_120MS, ADC_OFF, BOD_OFF);
-    digitalWrite(LBATT_PIN, LOW);
-    LowPower.powerDown(SLEEP_2S, ADC_OFF, BOD_OFF);
-  }
-  Serial.begin(115200);
-}
-// Read the VCC voltage and drive the battery status LEDs
+// Read the VCC voltage
 void low_battery() {
   long mv_batt = readVcc();
   if(is_battery_low() && !are_clocks_running()) {
       disable = true;
-      low_batt_blink();
   } else {
-    digitalWrite(LBATT_PIN, LOW);
     disable = false;
   }
   Serial.print("Batt: ");
@@ -404,11 +362,11 @@ void loop() {
   // Update the clock states
   update_states();
   Serial.print("unixtime_min: ");
-  Serial.println(unixtime_min);
+  Serial.println((int32_t) (unixtime_min));
   Serial.print("unixtime_min_day: ");
-  Serial.print((unixtime_min % 1440) / 60);
+  Serial.print((int32_t) ((unixtime_min % 1440) / 60));
   Serial.print(":");
-  Serial.println((unixtime_min % 1440) % 60);
+  Serial.println((int32_t) ((unixtime_min % 1440) % 60));
   if(fast==0){ // Skip sleep and EEPROM write if in fast mode
     if((unixtime_min % MIN_IN_DAY) == ENDTIME) {
       if (disable == false) {
@@ -419,6 +377,9 @@ void loop() {
       disable = false;
     }
   }
+}
 
-
+void isr_wakeup() {
+    myRTC.checkIfAlarm(1); // Disables this alarm
+    return;
 }
